@@ -1,0 +1,39 @@
+
+		model{
+			#PRIORS
+			tau.global ~ dgamma(0.0001, 0.0001)#overall percison
+			sd.global <- 1/sqrt(tau.global)#overall sd
+
+			a ~ dnorm(0, 0.0001)
+			b ~ dnorm(0, 0.0001)
+						
+			#auto correlation parameters
+			rho ~ dunif(min_rho, max_rho) #exponent on the geographic prediction model which is a weighted average of other population, weighted by distance to between study sites, rho controls the decay of the weight with distance  
+			
+			#LIKLIEHOOD 
+			for(n in 1:num_data){
+				#fit the linear model
+				Y[n] ~ dnorm(mu[n], tau.global) 
+				mu[n] <- a + b*ac_pred[n] 
+
+				#fit the phylo and geo models
+				for(k in 1:(num_data - 1)){
+					ac_weight[n, k] <- exp(-rho*ac_dist[n, k]) 
+				}
+				#make the sum of weights in denominator > 0
+				ac_pred[n] <- sum(Y_neigh[n, 1:ac_max_ind[n]]*ac_weight[n, 1:ac_max_ind[n]]) / max(0.00000000000001, sum(ac_weight[n, 1:ac_max_ind[n]]))
+			}
+
+			#MODEL PERFORMANCE	
+			for(n in 1:num_data){
+				#model performance predictors to make sure the model is not compleatly rubbish
+				residual[n] <- Y[n] - mu[n]#takes the residual out of the eq below so can be tracked
+				sq[n] <- pow(residual[n], 2)#residual squared 
+				Y.new[n] ~ dnorm(mu[n], tau.global)#new data
+				sq.new[n] <- pow(Y.new[n] - mu[n], 2)#residual squared for the new data
+			}
+			fit <- sum(sq[])#sum of squares for data
+			fit.new <- sum(sq.new[])#sum of squares for simulated data
+			test <- step(fit.new - fit)
+			bpvalue <- mean(test)
+		}

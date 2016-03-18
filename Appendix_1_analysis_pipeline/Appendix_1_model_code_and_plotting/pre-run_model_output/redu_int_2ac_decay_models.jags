@@ -1,0 +1,47 @@
+
+		model{
+			#PRIORS
+			tau.global ~ dgamma(0.0001, 0.0001)#overall percison
+			sd.global <- 1/sqrt(tau.global)#overall sd
+
+			for(i in 1:13){
+				b[i] ~ dnorm(0, 0.0001)#coefficents for 1 intercept, and 6 slopes, two of which are related to autocorrelation terms
+			}
+			#the effect of being a herb vs non-herb
+			for(i in 1:num_GF){
+				a[i] ~ dnorm(0, 0.0001)#coefficents for intercept of herbs and non-herbs
+			}
+			#auto correlation parameters
+			alpha ~ dunif(min_alpha, max_alpha) #exponent on the phlyogenetic prediction model which is a weighted average of other species, weighted by distance to most recent common ancestor, alpha controls the decay of the weight with distance 
+			rho ~ dunif(min_rho, max_rho) #exponent on the geographic prediction model which is a weighted average of other population, weighted by distance to between study sites, rho controls the decay of the weight with distance  
+			
+			#LIKLIEHOOD 
+			for(n in 1:num_data){
+				#fit the linear model
+				Y[n] ~ dnorm(mu[n], tau.global) 
+				mu[n] <- a[GF[n]] + b[1]*phy_pred[n] + b[2]*mat_dim[n] + b[3]*life_expect[n] + b[4]*PC_temp[n] + b[5]*AI[n] + b[6]*p_sea[n] +
+					b[7]*life_expect[n]*PC_temp[n] + b[8]*life_expect[n]*AI[n] + b[9]*life_expect[n]*p_sea[n] + b[10]*PC_temp[n]*AI[n] + b[11]*PC_temp[n]*p_sea[n] + b[12]*AI[n]*p_sea[n] + b[13]*geo_pred[n] 
+
+				#fit the phylo and geo models
+				for(k in 1:(num_data - 1)){
+					phy_weight[n, k] <- exp(-alpha*phy_dist[n, k])
+					geo_weight[n, k] <- exp(-rho*geo_dist[n, k]) 
+				}
+				#make the sum of weights in denominator > 0
+				phy_pred[n] <- sum(Y_neigh_phy[n, 1:phy_max_ind[n]]*phy_weight[n, 1:phy_max_ind[n]]) / max(0.00000000000001, sum(phy_weight[n, 1:phy_max_ind[n]]))
+				geo_pred[n] <- sum(Y_neigh_geo[n, 1:geo_max_ind[n]]*geo_weight[n, 1:geo_max_ind[n]]) / max(0.00000000000001, sum(geo_weight[n, 1:geo_max_ind[n]]))
+			}
+
+			#MODEL PERFORMANCE	
+			for(n in 1:num_data){
+				#model performance predictors to make sure the model is not compleatly rubbish
+				residual[n] <- Y[n] - mu[n]#takes the residual out of the eq below so can be tracked
+				sq[n] <- pow(residual[n], 2)#residual squared 
+				Y.new[n] ~ dnorm(mu[n], tau.global)#new data
+				sq.new[n] <- pow(Y.new[n] - mu[n], 2)#residual squared for the new data
+			}
+			fit <- sum(sq[])#sum of squares for data
+			fit.new <- sum(sq.new[])#sum of squares for simulated data
+			test <- step(fit.new - fit)
+			bpvalue <- mean(test)
+		}
